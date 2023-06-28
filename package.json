@@ -1,0 +1,18 @@
+{
+  "name": "vie-via-data",
+  "version": "1.0.0",
+  "description": "Base de données regroupant tous les VIE - VIA. Se met à jour automatiquemenet.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "load": "node scripts/load_data.js",
+    "delete": "node scripts/delete_data.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.4.0",
+    "dotenv": "^16.1.4",
+    "mongodb": "^5.6.0"
+  }
+}
