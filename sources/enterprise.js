@@ -1,5 +1,5 @@
-const axios = require('axios');
-const { DATABASE_ENTERPRISES_COLLECTION } = require('./keys')
+const keys = require('./keys')
+const network = require('./network')
 
 async function fetchEnterprises(step, skip) {
     const data = JSON.stringify({
@@ -17,7 +17,7 @@ async function fetchEnterprises(step, skip) {
         data : data
     };
       
-    let response = await axios(config)
+    let response = await network.request(config)
     return response.data
 }
 
@@ -29,18 +29,18 @@ async function fetchEnterpriseDetails(id) {
         data : {}
     };
       
-    let response = await axios(config)
+    let response = await network.request(config)
     return response.data
 }
 
-async function loadEnterprises(database) {
-    process.stdout.write("\x1b[94m# Loading enterprises\x1b[0m\n")
-
-    const collection = await database.createCollection(DATABASE_ENTERPRISES_COLLECTION)
+async function loadEnterprises(database, output) {
+    const collection = await database.createCollection(keys.DATABASE_ENTERPRISES_COLLECTION)
 
     const step = 20
     let limit = step
     let count = step + 1 
+
+    let processedEnterpriseCount = 0
 
     while (limit < count) {
         let data = await fetchEnterprises(step, limit-step)
@@ -50,8 +50,7 @@ async function loadEnterprises(database) {
         // Mise à jour du compteur
         count = data["count"]
 
-        let i = 1
-        for (let enterprise of enterprises) {
+        const fetchEnterpriseDetailsP = enterprises.map(async enterprise => {
             let details = await fetchEnterpriseDetails(enterprise.id)
 
             // Update keys
@@ -59,22 +58,62 @@ async function loadEnterprises(database) {
                 enterprise[key] = details[key]
             }
 
-            i++;
-            process.stdout.write(`\rProcessing enterprise: ${limit-step+i}/${count}`)
-        }
+            processedEnterpriseCount++
+            output.updateProgressBar(keys.ENTERPRISES_PROGRESS_BAR, processedEnterpriseCount*100/count)
 
+            return enterprise
+        });
 
-        await collection.insertMany(enterprises)
-        process.stdout.write(`\rInserting enterprise: ${limit}/${count}`)
+        await collection.insertMany(await Promise.all(fetchEnterpriseDetailsP))
+
+        // Mise à jour de la limite
+        limit += step
+    }
+    output.updateProgressBar(keys.ENTERPRISES_PROGRESS_BAR, 100)
+}
+
+async function updateEnterprises(database, output) {
+    const collection = database.collection(keys.DATABASE_ENTERPRISES_COLLECTION)
+
+    const step = 50
+    let limit = step
+    let count = step + 1
+
+    let processedEnterpriseCount = 0
+
+    while (limit < count) {
+        const data = await fetchEnterprises(step, limit-step)
+        let enterprises = data['result']
+
+        // Mise à jour du compteur
+        count = data["count"]
+        
+        const fetchEnterpriseDetailsP = enterprises.map(async enterprise => {
+            const details = await fetchEnterpriseDetails(enterprise.id)
+            
+            for (let key of Object.keys(details)) {
+                enterprise[key] = details[key]
+            }
+
+            const filter = { id: enterprise.id }
+            await collection.replaceOne(filter, enterprise)
+
+            processedEnterpriseCount++
+            output.updateProgressBar(keys.ENTERPRISES_UPDATE_PROGRESS_BAR, processedEnterpriseCount*100/count)
+
+            return enterprise
+        })
+
+        await Promise.all(fetchEnterpriseDetailsP)
 
         // Mise à jour de la limite
         limit += step
     }
 
-    process.stdout.clearLine()
-    process.stdout.write('\rInserting enterprise: \x1b[92mOK\x1b[0m\n')
+    output.updateProgressBar(keys.ENTERPRISES_UPDATE_PROGRESS_BAR, 100)
 }
 
 module.exports = {
-    loadEnterprises
+    loadEnterprises,
+    updateEnterprises
 }
